@@ -12,7 +12,7 @@
 
 substitutions:
   _REGION: "asia-southeast2"
-  _SERVICE: "rail-comp-api"
+  _SERVICE: "rail-comp" # HARUS sama dengan nama service Cloud Run
   _AR_REPO: "rail" # nama repo Artifact Registry (docker)
   # Database Neon (Postgres publik) — tidak perlu Cloud SQL connector.
   # DATABASE_URL & KAI_SECRET_KEY diambil dari Secret Manager (lihat --set-secrets).
@@ -34,8 +34,11 @@ steps:
       - "push"
       - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:$SHORT_SHA"
 
-  # 3) Deploy ke Cloud Run. Secret ditarik dari Secret Manager, bukan ditulis
-  #    di berkas ini.
+  # 3) Deploy ke Cloud Run.
+  #    DATABASE_URL & KAI_SECRET_KEY TIDAK diset di sini — dikelola sebagai env
+  #    var langsung di service Cloud Run (Console -> Edit & deploy new revision
+  #    -> Variables & Secrets). Deploy tanpa flag env akan MEMPERTAHANKAN env
+  #    yang sudah ada di service, jadi build ulang tidak menghapusnya.
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     entrypoint: gcloud
     args:
@@ -45,7 +48,6 @@ steps:
       - "--image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:$SHORT_SHA"
       - "--region=${_REGION}"
       - "--allow-unauthenticated"
-      - "--set-secrets=DATABASE_URL=DATABASE_URL:latest,KAI_SECRET_KEY=kai-secret-key:latest"
 
 images:
   - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:$SHORT_SHA"
