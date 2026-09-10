@@ -1,0 +1,47 @@
+# ── Data mentah & database ─────────────────────────────────────────────
+# Berkas Excel sumber dan database tidak masuk repo: besar, berubah sering,
+# dan sebagian berisi data operasional. Diunggah lewat UI saat runtime.
+*.xlsx
+*.xlsm
+~$*.xlsx
+*.db
+*.db-journal
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Folder data / unggahan
+/component/
+component/
+platform/backend/uploads/
+platform/backend/uploads/**
+
+# Debug/ekspor notebook
+parsed_lokomotif_debug*.xlsx
+kai_backup_*.db
+kai_backup_*/
+
+# ── Frontend ───────────────────────────────────────────────────────────
+node_modules/
+platform/frontend-dist/
+platform/rail-comp-tracker/dist/
+platform/rail-comp-tracker/node_modules/
+
+# ── Python ─────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# ── Editor & OS ────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# ── Notebook checkpoints ───────────────────────────────────────────────
+.ipynb_checkpoints/

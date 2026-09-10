@@ -1,0 +1,20 @@
+# Context build = folder backend/ ini. Yang tak perlu masuk image dibuang.
+
+# Data & unggahan — tak boleh masuk image (lihat juga .gitignore)
+uploads
+*.db
+*.db-journal
+*.db-wal
+*.xlsx
+*.xlsm
+
+# Env lokal — secret disuntik lewat Cloud Run, bukan di-bake
+.env
+.env.*
+
+# Cache & artefak lokal
+**/__pycache__
+**/*.pyc
+.venv
+venv
+*.log
