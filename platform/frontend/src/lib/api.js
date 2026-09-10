@@ -44,8 +44,13 @@ export function setUnauthorizedHandler(handler) {
   onUnauthorized = handler;
 }
 
+// Basis URL API. Diisi VITE_API_BASE_URL saat frontend dan backend beda origin
+// (mis. frontend di Vercel, backend di Cloud Run). Kosong = same-origin: cocok
+// untuk dev lokal (proxy vite) maupun kalau backend menyajikan frontend.
+const API_BASE = import.meta.env.VITE_API_BASE_URL || window.location.origin;
+
 function buildUrl(path, params) {
-  const url = new URL(path, window.location.origin);
+  const url = new URL(path, API_BASE);
 
   Object.entries(params || {}).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== "") {
