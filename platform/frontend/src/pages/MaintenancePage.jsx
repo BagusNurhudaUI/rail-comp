@@ -4,10 +4,12 @@ import { Alert, Card, Drawer, Input, Select, Table, Tag } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
 
 import { api } from "../lib/api";
+import ComponentHistoryDialog from "../components/ComponentHistoryDialog";
 import { useFetch, usePagedQuery } from "../hooks/useQuery";
 import { date, dateTime, duration, num, text } from "../lib/format";
 import {
   Cell,
+  CodeLink,
   KeyValue,
   PageHead,
   SectionLabel,
@@ -320,7 +322,15 @@ function MaintenanceDrawer({ id, onClose }) {
   const width = useDrawerWidth(720);
   const { data, loading } = useFetch(() => api.maintenanceDetail(id), [id], { skip: !id });
 
+  // Kode komponen yang sedang dilihat riwayat servisnya (dialog di atas drawer).
+  const [historyCode, setHistoryCode] = useState(null);
+
   const event = data?.event || {};
+
+  // Riwayat servis dibuka per kode (Asal / Pengganti terpisah), bukan per baris.
+  const openHistory = (code) => {
+    if (code) setHistoryCode(code);
+  };
 
   return (
     <Drawer
@@ -358,6 +368,10 @@ function MaintenanceDrawer({ id, onClose }) {
 
       <SectionLabel>Daftar komponen ({data?.components?.length || 0})</SectionLabel>
 
+      <p className="cell-sub" style={{ margin: "-4px 0 8px" }}>
+        Klik kode <b>Asal</b> atau <b>Pengganti</b> untuk melihat riwayat servisnya.
+      </p>
+
       <Table
         rowKey="id"
         size="small"
@@ -369,18 +383,22 @@ function MaintenanceDrawer({ id, onClose }) {
           {
             title: "Asal",
             dataIndex: "asal_kode_cetak",
-            render: (value, row) => <Cell main={<span className="mono">{text(value)}</span>} sub={row.asal_no_manuf} />,
+            render: (value, row) => (
+              <CodeLink code={value} sub={row.asal_no_manuf} onOpen={openHistory} />
+            ),
           },
           {
             title: "Pengganti",
             dataIndex: "pengganti_kode_cetak",
             render: (value, row) => (
-              <Cell main={<span className="mono">{text(value)}</span>} sub={row.pengganti_no_manuf} />
+              <CodeLink code={value} sub={row.pengganti_no_manuf} onOpen={openHistory} />
             ),
           },
           { title: "Ket.", dataIndex: "keterangan", render: (value) => <span className="muted">{text(value)}</span> },
         ]}
       />
+
+      <ComponentHistoryDialog code={historyCode} onClose={() => setHistoryCode(null)} />
     </Drawer>
   );
 }
@@ -390,6 +408,9 @@ function LocomotiveDrawer({ locoKey, onClose }) {
   const { data, loading } = useFetch(() => api.locomotive(locoKey), [locoKey], {
     skip: !locoKey,
   });
+
+  // Perawatan yang dibuka detailnya — drawer detail ditumpuk di atas ini.
+  const [eventId, setEventId] = useState(null);
 
   const header = data?.header || {};
 
@@ -425,11 +446,16 @@ function LocomotiveDrawer({ locoKey, onClose }) {
 
       <SectionLabel>Riwayat perawatan</SectionLabel>
 
+      <p className="cell-sub" style={{ margin: "-4px 0 8px" }}>
+        Klik satu perawatan untuk melihat detail dan daftar komponennya.
+      </p>
+
       <Table
         rowKey="id"
         size="small"
         dataSource={data?.riwayat || []}
         pagination={{ pageSize: 10, size: "small", hideOnSinglePage: true }}
+        onRow={(row) => ({ className: "row-link", onClick: () => setEventId(row.id) })}
         columns={[
           { title: "Tahun", dataIndex: "tahun_maintenance", width: 70, render: text },
           { title: "Dipo", dataIndex: "dipo_induk", width: 76, render: text },
@@ -439,6 +465,10 @@ function LocomotiveDrawer({ locoKey, onClose }) {
           { title: "Komp.", dataIndex: "component_count", align: "right", width: 74, render: num },
         ]}
       />
+
+      {/* Drawer detail perawatan ditumpuk di atas drawer riwayat lokomotif.
+          Komponennya sendiri tetap bisa diklik untuk membuka riwayat servis. */}
+      <MaintenanceDrawer id={eventId} onClose={() => setEventId(null)} />
     </Drawer>
   );
 }

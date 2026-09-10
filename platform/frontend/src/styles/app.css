@@ -613,6 +613,32 @@ body {
   cursor: pointer;
 }
 
+/* Kode komponen yang bisa diklik. Tampil biasa, aktif (garis bawah + oranye)
+   saat hover — jadi jelas mana yang bisa ditelusuri, per kode bukan per baris. */
+.code-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--ink);
+  transition: color 0.12s;
+}
+
+.code-link:hover {
+  color: var(--brand-strong);
+  text-decoration: underline;
+}
+
+/* Sel kode yang cocok dengan komponen yang sedang dilihat riwayatnya. */
+.code-hit {
+  background: var(--brand-soft);
+  color: var(--brand-ink);
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 5px;
+}
+
 .cell-strong {
   font-weight: 600;
 }

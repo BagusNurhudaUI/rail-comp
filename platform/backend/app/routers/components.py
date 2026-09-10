@@ -169,12 +169,8 @@ def export_components(
     )
 
 
-@router.get("/components/history")
-def component_history(
-    code: str = Query(..., min_length=2),
-    user: dict = Depends(get_current_user),
-):
-    """Lacak satu kode cetak / nomor manufaktur melintasi tahun dan lokomotif."""
+def _trace_component(code: str) -> dict:
+    """Lacak satu kode melintasi tahun & lokomotif, lengkap dengan perannya."""
     like = f"%{code.upper()}%"
 
     rows = db.query(
@@ -195,7 +191,24 @@ def component_history(
             (row["asal_kode_cetak"] or "") + (row["asal_no_manuf"] or "")
         ).upper()
 
-        row["peran"] = "Dilepas" if matched_asal else "Dipasang"
+        # Placeholder "-"/"–"/"." dsb. bukan pengganti sungguhan. Pengganti
+        # dianggap ada hanya bila nilainya memuat karakter alfanumerik. Ini
+        # menjaga data lama (yang mungkin masih menyimpan "-") tetap benar.
+        def _has_code(value):
+            return bool(value) and any(ch.isalnum() for ch in str(value))
+
+        has_pengganti = _has_code(row["pengganti_kode_cetak"]) or _has_code(
+            row["pengganti_no_manuf"]
+        )
+
+        # Kode ini di kolom asal:
+        #   - ada pengganti  -> benar-benar Dilepas (digantikan part lain)
+        #   - tidak ada      -> Tetap (diperiksa tapi tidak diganti)
+        # Kode ini di kolom pengganti -> Dipasang (part baru yang masuk).
+        if matched_asal:
+            row["peran"] = "Dilepas" if has_pengganti else "Tetap"
+        else:
+            row["peran"] = "Dipasang"
 
     return {
         "code": code,
@@ -203,6 +216,174 @@ def component_history(
         "lokomotif": sorted({r["lokomotif_no"] for r in rows if r["lokomotif_no"]}),
         "items": rows,
     }
+
+
+@router.get("/components/history")
+def component_history(
+    code: str = Query(..., min_length=2),
+    user: dict = Depends(get_current_user),
+):
+    """Lacak satu kode cetak / nomor manufaktur melintasi tahun dan lokomotif."""
+    return _trace_component(code)
+
+
+# ── Export Excel riwayat komponen ──────────────────────────────────────
+
+_BRAND = "FF6E00"
+_BRAND_INK = "8E3F00"
+_BRAND_SOFT = "FFF3E8"
+_LINE = "ECE3DA"
+
+
+def _parse_date(value):
+    from datetime import date
+
+    if not value:
+        return None
+
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+def _most_common_name(items) -> str:
+    from collections import Counter
+
+    names = Counter(i["component_name"] for i in items if i.get("component_name"))
+
+    return names.most_common(1)[0][0] if names else ""
+
+
+def _history_workbook(code: str, layout: str):
+    """Bangun workbook openpyxl bergaya untuk riwayat satu komponen.
+
+    layout "table"  -> satu baris per catatan (seperti tabel di UI, tanpa sumber)
+    layout "wide"   -> satu baris ringkas: komponen + tiap perhentiannya melebar
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    data = _trace_component(code)
+    items = data["items"]
+    nama = _most_common_name(items)
+
+    thin = Side(style="thin", color=_LINE)
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    header_fill = PatternFill("solid", fgColor=_BRAND)
+    header_font = Font(bold=True, color="FFFFFF", size=10)
+    hit_fill = PatternFill("solid", fgColor=_BRAND_SOFT)
+    hit_font = Font(bold=True, color=_BRAND_INK)
+    title_font = Font(bold=True, size=14, color=_BRAND_INK)
+    center = Alignment(horizontal="center", vertical="center")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Riwayat Komponen"
+
+    # Judul + ringkasan
+    ws["A1"] = f"Riwayat Servis Komponen — {code}"
+    ws["A1"].font = title_font
+    ws["A2"] = nama
+    ws["A2"].font = Font(italic=True, color="57493E")
+    ws["A3"] = (
+        f"{data['total']} catatan · {len(data['lokomotif'])} lokomotif · "
+        f"tahun {items[0]['tahun_maintenance'] if items else '-'}"
+        f"–{items[-1]['tahun_maintenance'] if items else '-'}"
+    )
+    ws["A3"].font = Font(color="6B5B4E", size=10)
+
+    target = code.strip().upper()
+    start_row = 5
+
+    if layout == "wide":
+        # Satu baris: Kode | Nama | Kemunculan | Lokomotif 1 | Masuk 1 | Keluar 1 | Peran 1 | ...
+        headers = ["Kode", "Nama Komponen", "Kemunculan"]
+        for i in range(1, len(items) + 1):
+            headers += [f"Lokomotif {i}", f"Masuk {i}", f"Keluar {i}", f"Peran {i}"]
+
+        widths = [16, 26, 12] + [16, 13, 13, 12] * len(items)
+        row_values = [code, nama, data["total"]]
+        for it in items:
+            row_values += [
+                it["lokomotif_no"],
+                _parse_date(it["masuk"]),
+                _parse_date(it["keluar"]),
+                it["peran"],
+            ]
+        body_rows = [row_values]
+    else:  # table
+        headers = [
+            "Tahun", "Lokomotif", "Komponen", "Peran",
+            "Asal", "Pengganti", "Masuk", "Keluar",
+        ]
+        widths = [8, 15, 22, 12, 18, 18, 13, 13]
+        body_rows = [
+            [
+                it["tahun_maintenance"],
+                it["lokomotif_no"],
+                it["component_name"],
+                it["peran"],
+                it["asal_kode_cetak"],
+                it["pengganti_kode_cetak"],
+                _parse_date(it["masuk"]),
+                _parse_date(it["keluar"]),
+            ]
+            for it in items
+        ]
+
+    # Header
+    for col, name in enumerate(headers, start=1):
+        cell = ws.cell(row=start_row, column=col, value=name)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = center
+        cell.border = border
+        ws.column_dimensions[get_column_letter(col)].width = widths[col - 1]
+
+    # Body
+    for r, values in enumerate(body_rows, start=start_row + 1):
+        for c, value in enumerate(values, start=1):
+            cell = ws.cell(row=r, column=c, value=value)
+            cell.border = border
+            cell.font = Font(size=10)
+
+            if isinstance(value, object) and hasattr(value, "isoformat") and not isinstance(value, str):
+                cell.number_format = "dd mmm yyyy"
+
+            # Sorot sel kode yang cocok dengan komponen yang dilacak.
+            header_name = headers[c - 1]
+            if header_name in ("Asal", "Pengganti") and str(value or "").strip().upper() == target:
+                cell.fill = hit_fill
+                cell.font = hit_font
+
+    ws.freeze_panes = ws.cell(row=start_row + 1, column=1)
+
+    return wb
+
+
+@router.get("/components/history/export")
+def export_component_history(
+    code: str = Query(..., min_length=2),
+    layout: str = Query("table", pattern="^(table|wide)$"),
+    user: dict = Depends(get_current_user),
+):
+    """Unduh riwayat satu komponen sebagai berkas Excel bergaya."""
+    wb = _history_workbook(code, layout)
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in code)
+    filename = f"riwayat_{safe}_{layout}.xlsx"
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @router.get("/maintenance")

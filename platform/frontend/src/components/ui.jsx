@@ -80,6 +80,7 @@ const STATUS_TONE = {
   Catatan: "default",
   Dilepas: "gold",
   Dipasang: "green",
+  Tetap: "default",
   SUCCESS: "green",
   FAILED: "red",
   FLUSHED: "gold",
@@ -106,6 +107,31 @@ export function Cell({ main, sub }) {
   return (
     <div>
       <div className="cell-strong">{main}</div>
+      {sub && <div className="cell-sub">{sub}</div>}
+    </div>
+  );
+}
+
+/** Kode komponen yang bisa diklik untuk membuka riwayat servisnya.
+ *
+ *  Dipakai per-kode (Asal / Pengganti terpisah), bukan per-baris, karena satu
+ *  baris memuat dua kode yang berbeda. Kode kosong tampil sebagai "—" biasa,
+ *  bukan tautan. `stopPropagation` supaya klik tidak menembus ke onRow tabel. */
+export function CodeLink({ code, sub, onOpen }) {
+  if (!code) return <span className="muted">—</span>;
+
+  return (
+    <div>
+      <button
+        type="button"
+        className="code-link mono"
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpen(code);
+        }}
+      >
+        {code}
+      </button>
       {sub && <div className="cell-sub">{sub}</div>}
     </div>
   );

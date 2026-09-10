@@ -127,6 +127,8 @@ export const api = {
 
   components: (params) => request("/api/components", { params }),
   componentHistory: (code) => request("/api/components/history", { params: { code } }),
+  exportComponentHistory: (code, layout) =>
+    request("/api/components/history/export", { params: { code, layout }, raw: true }),
   exportComponents: (params) =>
     request("/api/components/export", { params, raw: true }),
 

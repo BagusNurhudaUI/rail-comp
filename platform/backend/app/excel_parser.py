@@ -95,6 +95,23 @@ def clean_cell(value):
     return value
 
 
+def blank_placeholder(value):
+    """Anggap kosong bila nilainya hanya tanda hubung/tanda baca.
+
+    Di form sumber, sel kosong sering diisi "-", "–", "—", ".", atau "?" sebagai
+    penanda "tidak ada". Kalau disimpan apa adanya, "-" pada kolom pengganti
+    terbaca seolah ada part pengganti. Kode asli seperti "CA-1152133" tetap
+    dipertahankan karena memuat karakter alfanumerik.
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, str) and not any(ch.isalnum() for ch in value):
+        return None
+
+    return value
+
+
 def normalize_label(value) -> str:
     value = clean_cell(value)
 
@@ -323,6 +340,11 @@ def parse_components(df, block_start, block_width=BLOCK_WIDTH):
 
     for col in ("component_no", "component_name"):
         result[col] = result[col].replace("", np.nan).ffill()
+
+    # Bersihkan placeholder "-" dsb. pada kolom detail supaya tidak terbaca
+    # sebagai kode/keterangan sungguhan (mis. pengganti "-" -> kosong).
+    for col in COMPONENT_DETAIL_COLUMNS:
+        result[col] = result[col].map(blank_placeholder)
 
     result = result[
         result[COMPONENT_DETAIL_COLUMNS].notna().any(axis=1)

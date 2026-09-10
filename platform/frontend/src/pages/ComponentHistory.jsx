@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Alert, Button, Card, Col, Empty, Input, Row, Table } from "antd";
-import { SearchOutlined } from "@ant-design/icons";
+import { Alert, App, Button, Card, Col, Dropdown, Empty, Input, Row, Table } from "antd";
+import { DownOutlined, FileExcelOutlined, SearchOutlined } from "@ant-design/icons";
 
 import { api } from "../lib/api";
 import { useFetch } from "../hooks/useQuery";
@@ -24,11 +24,53 @@ export default function ComponentHistory() {
     skip: !term,
   });
 
+  const { message } = App.useApp();
+  const [downloading, setDownloading] = useState(false);
+
   const trace = () => {
     const next = code.trim();
 
     if (next) setParams({ code: next });
   };
+
+  const exportExcel = async (layout) => {
+    setDownloading(true);
+
+    try {
+      const response = await api.exportComponentHistory(term, layout);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = `riwayat_${term}_${layout}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      message.success("Excel diunduh");
+    } catch (exception) {
+      message.error(exception.message);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const exportMenu = (
+    <Dropdown
+      trigger={["click"]}
+      menu={{
+        items: [
+          { key: "table", label: "Tabel lengkap" },
+          { key: "wide", label: "Ringkas (per komponen, melebar)" },
+        ],
+        onClick: ({ key }) => exportExcel(key),
+      }}
+    >
+      <Button icon={<FileExcelOutlined />} loading={downloading} size="small">
+        Export Excel <DownOutlined />
+      </Button>
+    </Dropdown>
+  );
 
   const perYear = useMemo(() => {
     const counts = {};
@@ -114,7 +156,12 @@ export default function ComponentHistory() {
             </Col>
           </Row>
 
-          <Card style={{ marginTop: 14 }} styles={{ body: { padding: 16 } }} title="Jejak lengkap">
+          <Card
+            style={{ marginTop: 14 }}
+            styles={{ body: { padding: 16 } }}
+            title="Jejak lengkap"
+            extra={exportMenu}
+          >
             <Table
               rowKey="id"
               size="middle"
@@ -143,7 +190,8 @@ export default function ComponentHistory() {
                   width: 150,
                   render: (value) => <span className="mono">{text(value)}</span>,
                 },
-                { title: "Masuk", dataIndex: "masuk", width: 120, render: date },
+                { title: "Masuk", dataIndex: "masuk", width: 116, render: date },
+                { title: "Keluar", dataIndex: "keluar", width: 116, render: date },
                 {
                   title: "Sumber",
                   dataIndex: "source_file",

@@ -8,9 +8,11 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // Selama `npm run dev`, panggilan API diteruskan ke backend FastAPI.
+      // Selama `npm run dev`, panggilan API diteruskan ke backend FastAPI lokal.
+      // Port 8000 = default run.bat (uvicorn ... --port 8000).
+      // Untuk produksi, base URL diatur lewat VITE_API_BASE_URL (lihat api.js).
       "/api": {
-        target: process.env.VITE_API_BASE_URL || "http://127.0.0.1:8080",
+        target: "http://127.0.0.1:8000",
         changeOrigin: true,
       },
     },
