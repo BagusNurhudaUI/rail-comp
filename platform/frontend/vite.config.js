@@ -1,8 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Hasil build ditaruh di platform/frontend-dist supaya FastAPI bisa
-// menyajikannya langsung tanpa server tambahan.
+// Frontend berdiri sendiri (di-deploy ke Vercel). Output memakai folder
+// default Vite `dist/` supaya Vercel menemukannya tanpa konfigurasi tambahan.
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -10,14 +10,13 @@ export default defineConfig({
     proxy: {
       // Selama `npm run dev`, panggilan API diteruskan ke backend FastAPI.
       "/api": {
-        target: "http://127.0.0.1:8080",
-        // target: "http://127.0.0.1:8000",
+        target: process.env.VITE_API_BASE_URL || "http://127.0.0.1:8080",
         changeOrigin: true,
       },
     },
   },
   build: {
-    outDir: "../frontend-dist",
+    outDir: "dist",
     emptyOutDir: true,
     chunkSizeWarningLimit: 900,
     rollupOptions: {
