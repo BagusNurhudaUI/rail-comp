@@ -1,0 +1,54 @@
+# Build + push + deploy backend ke Cloud Run, dipicu oleh Cloud Build trigger
+# yang terhubung ke repo (continuous deployment via Console).
+#
+# options.logging = CLOUD_LOGGING_ONLY WAJIB ada: saat build berjalan di bawah
+# service account tersendiri, Cloud Build menolak jalan tanpa opsi logging ini
+# (itulah error "must specify logs_bucket / default_logs_bucket_behavior /
+# CLOUD_LOGGING_ONLY"). Mode "Dockerfile" auto di wizard tidak bisa menyetelnya,
+# jadi trigger harus diarahkan ke berkas ini.
+#
+# Working dir setiap step adalah root repo (/workspace), jadi path ditulis dari
+# root: platform/backend.
+
+substitutions:
+  _REGION: "asia-southeast2"
+  _SERVICE: "rail-comp-api"
+  _AR_REPO: "rail" # nama repo Artifact Registry (docker)
+  # Database Neon (Postgres publik) — tidak perlu Cloud SQL connector.
+  # DATABASE_URL & KAI_SECRET_KEY diambil dari Secret Manager (lihat --set-secrets).
+
+steps:
+  # 1) Build image dari Dockerfile backend, context = platform/backend
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:$SHORT_SHA"
+      - "-f"
+      - "platform/backend/Dockerfile"
+      - "platform/backend"
+
+  # 2) Push ke Artifact Registry
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:$SHORT_SHA"
+
+  # 3) Deploy ke Cloud Run. Secret ditarik dari Secret Manager, bukan ditulis
+  #    di berkas ini.
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "${_SERVICE}"
+      - "--image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:$SHORT_SHA"
+      - "--region=${_REGION}"
+      - "--allow-unauthenticated"
+      - "--set-secrets=DATABASE_URL=DATABASE_URL:latest,KAI_SECRET_KEY=kai-secret-key:latest"
+
+images:
+  - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:$SHORT_SHA"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
