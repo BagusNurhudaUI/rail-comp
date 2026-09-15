@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { App, Button, Col, Dropdown, Empty, Grid, Modal, Row, Spin, Table } from "antd";
-import { DownOutlined, FileExcelOutlined } from "@ant-design/icons";
+import { App, Button, Col, Dropdown, Empty, Grid, Modal, Row, Space, Spin, Table } from "antd";
+import { DownOutlined, FileExcelOutlined, FilePdfOutlined } from "@ant-design/icons";
 
 import { api } from "../lib/api";
 import { useFetch } from "../hooks/useQuery";
-import { date, text } from "../lib/format";
+import { date, loco, text } from "../lib/format";
+import { downloadHistoryPdf } from "../lib/historyPdf";
 import { DATA_COLORS } from "../theme";
 import { GroupedBar } from "./charts";
 import { Stat, StatusTag, Widget } from "./ui";
@@ -41,6 +42,19 @@ export default function ComponentHistoryDialog({ code, onClose }) {
       URL.revokeObjectURL(url);
 
       message.success("Excel diunduh");
+    } catch (exception) {
+      message.error(exception.message);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const exportPdf = async () => {
+    setDownloading(true);
+
+    try {
+      await downloadHistoryPdf(code, data);
+      message.success("PDF diunduh");
     } catch (exception) {
       message.error(exception.message);
     } finally {
@@ -146,55 +160,83 @@ export default function ComponentHistoryDialog({ code, onClose }) {
               Jejak lengkap
             </span>
 
-            <Dropdown
-              trigger={["click"]}
-              menu={{
-                items: [
-                  { key: "table", label: "Tabel lengkap" },
-                  { key: "wide", label: "Ringkas (per komponen, melebar)" },
-                ],
-                onClick: ({ key }) => exportExcel(key),
-              }}
-            >
-              <Button icon={<FileExcelOutlined />} loading={downloading} size="small">
-                Export Excel <DownOutlined />
+            <Space>
+              <Dropdown
+                trigger={["click"]}
+                menu={{
+                  items: [
+                    { key: "table", label: "Tabel lengkap" },
+                    { key: "wide", label: "Ringkas (per komponen, melebar)" },
+                  ],
+                  onClick: ({ key }) => exportExcel(key),
+                }}
+              >
+                <Button icon={<FileExcelOutlined />} loading={downloading} size="small">
+                  Excel <DownOutlined />
+                </Button>
+              </Dropdown>
+
+              <Button icon={<FilePdfOutlined />} loading={downloading} size="small" onClick={exportPdf}>
+                PDF
               </Button>
-            </Dropdown>
+            </Space>
           </div>
 
           <Table
             rowKey="id"
             size="small"
             dataSource={items}
-            scroll={{ x: 980 }}
+            scroll={{ x: 1420 }}
             pagination={{ pageSize: 15, showSizeChanger: true, size: "small" }}
             columns={[
-              { title: "Tahun", dataIndex: "tahun_maintenance", width: 74, render: text },
-              { title: "Lokomotif", dataIndex: "lokomotif_no", width: 132, render: text },
+              { title: "Tahun", dataIndex: "tahun_maintenance", width: 70, render: text },
+              {
+                title: "Lokomotif",
+                dataIndex: "lokomotif_no",
+                width: 122,
+                render: (value) => <span className="mono">{loco(value)}</span>,
+              },
               {
                 title: "Komponen",
                 dataIndex: "component_name",
-                width: 170,
-                responsive: ["md"],
+                width: 160,
                 render: text,
               },
               {
                 title: "Peran",
                 dataIndex: "peran",
-                width: 104,
+                width: 100,
                 render: (value) => <StatusTag value={value} />,
               },
               {
-                title: "Asal",
+                title: "Asal (No KAI)",
                 dataIndex: "asal_kode_cetak",
-                width: 140,
+                width: 128,
                 render: codeCell,
               },
               {
-                title: "Pengganti",
-                dataIndex: "pengganti_kode_cetak",
-                width: 140,
+                title: "Asal (Serial Number)",
+                dataIndex: "asal_no_manuf",
+                width: 144,
                 render: codeCell,
+              },
+              {
+                title: "Pengganti (No KAI)",
+                dataIndex: "pengganti_kode_cetak",
+                width: 144,
+                render: codeCell,
+              },
+              {
+                title: "Pengganti (Serial Number)",
+                dataIndex: "pengganti_no_manuf",
+                width: 160,
+                render: codeCell,
+              },
+              {
+                title: "Jenis Perawatan",
+                dataIndex: "jenis_perawatan",
+                width: 116,
+                render: text,
               },
               { title: "Masuk", dataIndex: "masuk", width: 112, responsive: ["md"], render: date },
               { title: "Keluar", dataIndex: "keluar", width: 112, responsive: ["lg"], render: date },

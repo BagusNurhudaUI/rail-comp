@@ -185,7 +185,10 @@ def locomotive_detail(equipment: str, user: dict = Depends(get_current_user)):
     riwayat = db.query(
         """
         SELECT id, tahun_maintenance, dipo_induk, jenis_perawatan,
-               masuk, keluar, component_count
+               masuk, keluar,
+               (SELECT COUNT(DISTINCT ec.component_no)
+                  FROM equipment_components ec
+                 WHERE ec.maintenance_event_id = maintenance_events.id) AS component_count
         FROM maintenance_events
         WHERE lokomotif_key = ?
         ORDER BY tahun_maintenance DESC, masuk DESC

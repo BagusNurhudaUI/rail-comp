@@ -59,6 +59,34 @@ def summary(
         """,
         params,
     )
+
+    # Rincian "Total komponen" sebagai tiga kelompok yang SALING LEPAS (mengikuti
+    # pewarnaan form: dismantle/refurbish/penambahan). Warna sel tak terbaca
+    # pandas, jadi didekati lewat kolom Asal/Pengganti:
+    #   dismantle  = ada asal & ada pengganti  -> lama dilepas & diganti (swap)
+    #   refurbish  = ada asal, tanpa pengganti -> diperiksa, tetap dipakai
+    #   penambahan = ada pengganti, tanpa asal -> part baru tanpa gantian
+    # (Dulu "terinstall" = "ada pengganti" — selalu sama dengan dismantle karena
+    #  setiap penggantian selalu punya asal, jadi diganti dengan penambahan.)
+    dismantle = db.scalar(
+        f"""
+        SELECT COUNT(*) FROM equipment_components
+        WHERE (asal_kode_cetak IS NOT NULL OR asal_no_manuf IS NOT NULL)
+          AND (pengganti_kode_cetak IS NOT NULL OR pengganti_no_manuf IS NOT NULL)
+        {where}
+        """,
+        params,
+    )
+    refurbish = db.scalar(
+        f"""
+        SELECT COUNT(*) FROM equipment_components
+        WHERE (asal_kode_cetak IS NOT NULL OR asal_no_manuf IS NOT NULL)
+          AND pengganti_kode_cetak IS NULL AND pengganti_no_manuf IS NULL
+        {where}
+        """,
+        params,
+    )
+    penambahan = pemasangan_baru
     estimasi = db.scalar(
         f"""
         SELECT COUNT(*) FROM maintenance_events
@@ -78,6 +106,11 @@ def summary(
         "berjalan": berjalan,
         "total_komponen": total_komponen,
         "komponen_diganti": diganti,
+        # Terinstall = semua part yang dipasang (punya pengganti) = swap + penambahan.
+        "komponen_terinstall": dismantle + penambahan,
+        "komponen_dismantle": dismantle,
+        "komponen_refurbish": refurbish,
+        "komponen_penambahan": penambahan,
         "pemasangan_baru": pemasangan_baru,
         "tanggal_estimasi": estimasi,
         "persen_selesai": operasional,
@@ -114,10 +147,10 @@ def charts(
 
     top_komponen = db.query(
         f"""
-        SELECT component_name AS label, COUNT(*) AS value
+        SELECT COALESCE(component_base, component_name) AS label, COUNT(*) AS value
         FROM equipment_components
         WHERE component_name IS NOT NULL{where}
-        GROUP BY component_name
+        GROUP BY COALESCE(component_base, component_name)
         ORDER BY value DESC
         LIMIT 10
         """,
@@ -354,10 +387,10 @@ def filter_options(user: dict = Depends(get_current_user)):
             row["value"]
             for row in db.query(
                 """
-                SELECT component_name AS value, COUNT(*) AS n
+                SELECT COALESCE(component_base, component_name) AS value, COUNT(*) AS n
                 FROM equipment_components
                 WHERE component_name IS NOT NULL
-                GROUP BY component_name
+                GROUP BY COALESCE(component_base, component_name)
                 ORDER BY n DESC
                 LIMIT 60
                 """

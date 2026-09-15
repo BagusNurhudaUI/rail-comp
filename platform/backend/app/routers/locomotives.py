@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from .. import db
 from ..deps import get_current_user
+from ..excel_parser import augment_component_rows
 
 router = APIRouter(prefix="/api/locomotives", tags=["locomotives"])
 
@@ -60,7 +61,9 @@ def list_locomotives(
         SELECT lokomotif_key,
                MAX(lokomotif_no) AS lokomotif_no,
                COUNT(*) AS total_perawatan,
-               SUM(component_count) AS total_komponen,
+               (SELECT COUNT(DISTINCT ec.component_no)
+                  FROM equipment_components ec
+                 WHERE ec.lokomotif_key = maintenance_events.lokomotif_key) AS total_komponen,
                MAX(masuk) AS terakhir_masuk,
                MAX(keluar) AS terakhir_keluar,
                MIN(tahun_maintenance) AS tahun_awal,
@@ -132,17 +135,57 @@ def detail(lokomotif_key: str, user: dict = Depends(get_current_user)):
         (lokomotif_key,),
     )
 
-    komponen_teratas = db.query(
+    # "Total komponen" & jumlah tiap komponen mengikuti struktur form Excel (per
+    # perawatan), bukan menjumlahkan seluruh baris di semua perawatan. Baris
+    # diambil lalu dilengkapi nama induknya supaya data lama pun benar.
+    rows = db.query(
         """
-        SELECT component_name AS label, COUNT(*) AS value
+        SELECT maintenance_event_id, component_no, component_seq,
+               component_name, component_base
         FROM equipment_components
         WHERE lokomotif_key = ? AND component_name IS NOT NULL
-        GROUP BY component_name
-        ORDER BY value DESC
-        LIMIT 10
+        ORDER BY maintenance_event_id, id
         """,
         (lokomotif_key,),
     )
+    augment_component_rows(rows)
+
+    # Total komponen = jumlah nomor komponen unik (≈32, sesuai form), bukan
+    # akumulasi semua perawatan.
+    header["total_komponen"] = len({r["component_no"] for r in rows if r["component_no"]})
+
+    # Kolom "Komp." per perawatan juga dihitung dari nomor komponen unik (≈32),
+    # bukan jumlah baris tersimpan — berlaku walau data belum di-ingest ulang.
+    per_event_groups: dict = {}
+    for row in rows:
+        if row["component_no"]:
+            per_event_groups.setdefault(row["maintenance_event_id"], set()).add(
+                row["component_no"]
+            )
+
+    for visit in riwayat:
+        visit["component_count"] = len(per_event_groups.get(visit["id"], set()))
+
+    # Jumlah tiap komponen = terbanyak dalam satu perawatan (mis. Cylinder Assy
+    # 8, Injection Pump 8), bukan dijumlah lintas perawatan.
+    per_event: dict = {}
+    for row in rows:
+        base = row.get("component_base") or row.get("component_name")
+        bucket = per_event.setdefault(row["maintenance_event_id"], {})
+        bucket[base] = bucket.get(base, 0) + 1
+
+    per_component: dict = {}
+    for bucket in per_event.values():
+        for base, count in bucket.items():
+            if count > per_component.get(base, 0):
+                per_component[base] = count
+
+    komponen_teratas = [
+        {"label": label, "value": value}
+        for label, value in sorted(
+            per_component.items(), key=lambda item: (-item[1], item[0])
+        )
+    ][:10]
 
     per_tahun = db.query(
         """

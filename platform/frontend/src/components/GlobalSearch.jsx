@@ -4,6 +4,7 @@ import { AutoComplete, Input, Spin } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
 
 import { api } from "../lib/api";
+import { loco } from "../lib/format";
 
 /** Pencarian lintas entitas: lokomotif dan kode komponen sekaligus. */
 export default function GlobalSearch() {
@@ -39,7 +40,7 @@ export default function GlobalSearch() {
                 value: `loco:${item.lokomotif_key}`,
                 label: (
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ fontWeight: 600 }}>{item.lokomotif_no}</span>
+                    <span style={{ fontWeight: 600 }}>{loco(item.lokomotif_no)}</span>
                     <span style={{ color: "var(--ink-3)", fontSize: 12 }}>
                       {item.tahun_maintenance} · {item.dipo_induk || "—"}
                     </span>

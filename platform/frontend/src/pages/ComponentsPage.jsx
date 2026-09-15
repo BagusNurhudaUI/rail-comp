@@ -5,7 +5,7 @@ import { DownloadOutlined, SearchOutlined } from "@ant-design/icons";
 
 import { api } from "../lib/api";
 import { useFetch, usePagedQuery } from "../hooks/useQuery";
-import { num, text } from "../lib/format";
+import { loco, num, text } from "../lib/format";
 import { Cell, PageHead, StatusTag } from "../components/ui";
 
 export default function ComponentsPage() {
@@ -50,9 +50,11 @@ export default function ComponentsPage() {
       title: "Komponen",
       dataIndex: "component_name",
       width: 200,
-      render: (value, row) => <Cell main={text(value)} sub={`No. ${text(row.component_no)}`} />,
+      render: (value, row) => (
+        <Cell main={text(value)} sub={`No. ${text(row.component_seq ?? row.component_no)}`} />
+      ),
     },
-    { title: "Lokomotif", dataIndex: "lokomotif_no", width: 140, render: text, responsive: ["sm"] },
+    { title: "Lokomotif", dataIndex: "lokomotif_no", width: 140, render: loco, responsive: ["sm"] },
     {
       title: "Asal",
       dataIndex: "asal_kode_cetak",

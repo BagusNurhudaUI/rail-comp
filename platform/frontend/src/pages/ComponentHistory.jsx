@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Alert, App, Button, Card, Col, Dropdown, Empty, Input, Row, Table } from "antd";
-import { DownOutlined, FileExcelOutlined, SearchOutlined } from "@ant-design/icons";
+import { Alert, App, Button, Card, Col, Dropdown, Empty, Input, Row, Space, Table } from "antd";
+import { DownOutlined, FileExcelOutlined, FilePdfOutlined, SearchOutlined } from "@ant-design/icons";
 
 import { api } from "../lib/api";
 import { useFetch } from "../hooks/useQuery";
-import { date, text } from "../lib/format";
+import { date, loco, text } from "../lib/format";
+import { downloadHistoryPdf } from "../lib/historyPdf";
 import { DATA_COLORS } from "../theme";
 import { GroupedBar } from "../components/charts";
 import { PageHead, Stat, StatusTag, Widget } from "../components/ui";
@@ -55,21 +56,40 @@ export default function ComponentHistory() {
     }
   };
 
+  const exportPdf = async () => {
+    setDownloading(true);
+
+    try {
+      await downloadHistoryPdf(term, data);
+      message.success("PDF diunduh");
+    } catch (exception) {
+      message.error(exception.message);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const exportMenu = (
-    <Dropdown
-      trigger={["click"]}
-      menu={{
-        items: [
-          { key: "table", label: "Tabel lengkap" },
-          { key: "wide", label: "Ringkas (per komponen, melebar)" },
-        ],
-        onClick: ({ key }) => exportExcel(key),
-      }}
-    >
-      <Button icon={<FileExcelOutlined />} loading={downloading} size="small">
-        Export Excel <DownOutlined />
+    <Space>
+      <Dropdown
+        trigger={["click"]}
+        menu={{
+          items: [
+            { key: "table", label: "Tabel lengkap" },
+            { key: "wide", label: "Ringkas (per komponen, melebar)" },
+          ],
+          onClick: ({ key }) => exportExcel(key),
+        }}
+      >
+        <Button icon={<FileExcelOutlined />} loading={downloading} size="small">
+          Excel <DownOutlined />
+        </Button>
+      </Dropdown>
+
+      <Button icon={<FilePdfOutlined />} loading={downloading} size="small" onClick={exportPdf}>
+        PDF
       </Button>
-    </Dropdown>
+    </Space>
   );
 
   const perYear = useMemo(() => {
@@ -82,6 +102,15 @@ export default function ComponentHistory() {
 
     return Object.entries(counts).map(([label, value]) => ({ label, value }));
   }, [data]);
+
+  // Sel kode yang cocok dengan kode yang sedang dilacak disorot di kolom mana pun.
+  const target = String(term ?? "").trim().toUpperCase();
+  const codeCell = (value) => {
+    if (!value) return <span className="muted">—</span>;
+
+    const hit = String(value).trim().toUpperCase() === target;
+    return <span className={hit ? "mono code-hit" : "mono"}>{value}</span>;
+  };
 
   return (
     <>
@@ -166,29 +195,52 @@ export default function ComponentHistory() {
               rowKey="id"
               size="middle"
               dataSource={data.items}
-              scroll={{ x: 1080 }}
+              scroll={{ x: 1480 }}
               pagination={{ pageSize: 25, showSizeChanger: true }}
               columns={[
-                { title: "Tahun", dataIndex: "tahun_maintenance", width: 78, render: text },
-                { title: "Lokomotif", dataIndex: "lokomotif_no", width: 140, render: text },
-                { title: "Komponen", dataIndex: "component_name", width: 180, render: text },
+                { title: "Tahun", dataIndex: "tahun_maintenance", width: 72, render: text },
+                {
+                  title: "Lokomotif",
+                  dataIndex: "lokomotif_no",
+                  width: 128,
+                  render: (value) => <span className="mono">{loco(value)}</span>,
+                },
+                { title: "Komponen", dataIndex: "component_name", width: 170, render: text },
                 {
                   title: "Peran",
                   dataIndex: "peran",
-                  width: 110,
+                  width: 104,
                   render: (value) => <StatusTag value={value} />,
                 },
                 {
-                  title: "Asal",
+                  title: "Asal (No KAI)",
                   dataIndex: "asal_kode_cetak",
-                  width: 150,
-                  render: (value) => <span className="mono">{text(value)}</span>,
+                  width: 132,
+                  render: (value) => codeCell(value),
                 },
                 {
-                  title: "Pengganti",
+                  title: "Asal (Serial Number)",
+                  dataIndex: "asal_no_manuf",
+                  width: 148,
+                  render: (value) => codeCell(value),
+                },
+                {
+                  title: "Pengganti (No KAI)",
                   dataIndex: "pengganti_kode_cetak",
-                  width: 150,
-                  render: (value) => <span className="mono">{text(value)}</span>,
+                  width: 148,
+                  render: (value) => codeCell(value),
+                },
+                {
+                  title: "Pengganti (Serial Number)",
+                  dataIndex: "pengganti_no_manuf",
+                  width: 164,
+                  render: (value) => codeCell(value),
+                },
+                {
+                  title: "Jenis Perawatan",
+                  dataIndex: "jenis_perawatan",
+                  width: 118,
+                  render: text,
                 },
                 { title: "Masuk", dataIndex: "masuk", width: 116, render: date },
                 { title: "Keluar", dataIndex: "keluar", width: 116, render: date },

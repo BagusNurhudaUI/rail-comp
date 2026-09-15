@@ -19,6 +19,13 @@ export function text(value) {
   return value === null || value === undefined || value === "" ? EMPTY : String(value);
 }
 
+/** Nomor lokomotif tanpa spasi, mis. "CC 204 03 06" -> "CC2040306". */
+export function loco(value) {
+  if (value === null || value === undefined || value === "") return EMPTY;
+
+  return String(value).replace(/\s+/g, "");
+}
+
 export function date(value) {
   if (!value) return EMPTY;
 

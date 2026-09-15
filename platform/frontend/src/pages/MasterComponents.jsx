@@ -4,7 +4,7 @@ import { SearchOutlined } from "@ant-design/icons";
 
 import { api } from "../lib/api";
 import { useFetch, usePagedQuery } from "../hooks/useQuery";
-import { date, num, text } from "../lib/format";
+import { date, loco, num, text } from "../lib/format";
 import { DATA_COLORS } from "../theme";
 import { DonutBreakdown, RankedBar } from "../components/charts";
 import {
@@ -307,7 +307,7 @@ function ComponentDrawer({ id, onClose }) {
         pagination={{ pageSize: 10, size: "small", hideOnSinglePage: true }}
         columns={[
           { title: "Tahun", dataIndex: "tahun_maintenance", width: 72, render: text },
-          { title: "Lokomotif", dataIndex: "lokomotif_no", width: 130, render: text },
+          { title: "Lokomotif", dataIndex: "lokomotif_no", width: 130, render: loco },
           {
             title: "Peran",
             dataIndex: "peran",

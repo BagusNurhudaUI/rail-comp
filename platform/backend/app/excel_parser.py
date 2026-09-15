@@ -29,6 +29,11 @@ COMPONENT_COLUMNS = [
     "keterangan",
 ]
 
+# Token sub-komponen di ujung nama, mis. "1R", "2L", "1a", atau "3".
+_SUBTOKEN_RE = re.compile(r"\s*(\d+[A-Za-z]?)$")
+# Baris yang isinya HANYA sub-token (nama induk ada di baris pertama grup).
+_BARE_SUBTOKEN_RE = re.compile(r"^\d+[A-Za-z]?$")
+
 COMPONENT_DETAIL_COLUMNS = [
     "asal_kode_cetak",
     "asal_no_manuf",
@@ -110,6 +115,146 @@ def blank_placeholder(value):
         return None
 
     return value
+
+
+def _strip_subtoken(name: str) -> str:
+    """Buang sub-token di ujung nama: "CYLINDER ASSY 1R" -> "CYLINDER ASSY"."""
+    match = _SUBTOKEN_RE.search(name)
+
+    if match and match.start() > 0:
+        return name[: match.start()].strip()
+
+    return name
+
+
+def derive_subcomponents(no_text: str, names: list[str]):
+    """Inti aturan sub-komponen, dipakai saat ingest maupun saat query.
+
+    Menerima nomor komponen (mis. "2") dan daftar nama baris di grup itu.
+    Mengembalikan (seq, nama_lengkap, base) sesuai tiga bentuk data:
+    A. nama identik berulang -> "NAMA 1..n"; B. sub-token nyata (2R) ->
+    "NAMA 2R"; C. sub-nama berbeda -> dipertahankan.
+    """
+    size = len(names)
+    base = _strip_subtoken(names[0]) if names and names[0] else ""
+    uniform = len({n.upper() for n in names if n}) <= 1
+
+    seqs: list[str] = []
+    fulls: list[str] = []
+
+    for position, raw in enumerate(names, start=1):
+        if size <= 1:
+            seqs.append(no_text)
+            fulls.append(raw)
+            continue
+
+        seqs.append(f"{no_text}.{position}" if no_text else str(position))
+
+        if uniform:
+            fulls.append(f"{base} {position}".strip() if base else raw)
+        elif _BARE_SUBTOKEN_RE.match(raw):
+            fulls.append(f"{base} {raw}".strip() if base else raw)
+        else:
+            fulls.append(raw)
+
+    return seqs, fulls, base
+
+
+def augment_component_rows(rows):
+    """Isi `component_seq` / nama lengkap / `component_base` pada list dict hasil
+    query — aturan yang sama dengan saat ingest, tapi bekerja atas data yang
+    sudah tersimpan (termasuk data lama yang belum di-ingest ulang).
+
+    Baris dikelompokkan per (event, nomor komponen) — yang berurutan karena
+    query mengurutkan berdasarkan id. Grup yang sudah punya `component_seq`
+    (hasil ingest baru) dibiarkan apa adanya supaya penomoran posisinya tetap.
+    """
+    from itertools import groupby
+
+    def key(row):
+        return (row.get("maintenance_event_id"), row.get("component_no"))
+
+    for _, group in groupby(rows, key=key):
+        group = list(group)
+
+        if group[0].get("component_seq"):
+            continue
+
+        names = [str(row.get("component_name") or "").strip() for row in group]
+        no_text = str(group[0].get("component_no") or "").strip()
+        seqs, fulls, base = derive_subcomponents(no_text, names)
+
+        for row, seq, full in zip(group, seqs, fulls):
+            row["component_seq"] = seq
+            row["component_name"] = full
+            row["component_base"] = base or full
+
+    return rows
+
+
+def complete_component_groups(result):
+    """Beri nomor sub-komponen (2.1, 2.2, …) dan lengkapi nama multi-bagian.
+
+    Satu nomor komponen (mis. "2" = Cylinder Assy) bisa punya banyak baris.
+    Tiga bentuk data yang muncul di file sumber ditangani:
+
+    * A. nama identik berulang  (CYLINDER ASSY ×8)  -> "CYLINDER ASSY 1..8"
+    * B. sub-token nyata         (CYLINDER ASSY 1R, 2R, …) -> "CYLINDER ASSY 2R"
+    * C. sub-nama berbeda        (BLOWER TM, BLOWER RF) -> dipertahankan apa adanya
+
+    Dijalankan atas grup lengkap (sebelum baris kosong dibuang) supaya nomor
+    sub-komponen mencerminkan posisi fisik aslinya. Menambah kolom
+    `component_seq` (nomor tampil, mis. "2.1") dan `component_base` (nama induk
+    untuk pengelompokan), serta menimpa `component_name` dengan nama lengkap.
+    """
+    seq_by_idx: dict = {}
+    name_by_idx: dict = {}
+    base_by_idx: dict = {}
+
+    groups = result.groupby("component_no", sort=False, dropna=False).groups
+
+    for _, index in groups.items():
+        index = list(index)
+        names = [
+            "" if value is None else str(value).strip()
+            for value in result.loc[index, "component_name"]
+        ]
+        no_value = result.loc[index[0], "component_no"]
+        no_text = "" if no_value is None else str(no_value).strip()
+
+        # Nomor float dari pandas ("2.0") dirapikan jadi "2".
+        try:
+            if no_text and float(no_text).is_integer():
+                no_text = str(int(float(no_text)))
+        except ValueError:
+            pass
+
+        size = len(names)
+        base = _strip_subtoken(names[0]) if names and names[0] else ""
+        uniform = len({n.upper() for n in names if n}) <= 1
+
+        for position, (orig, raw) in enumerate(zip(index, names), start=1):
+            if size <= 1:
+                seq_by_idx[orig] = no_text
+                name_by_idx[orig] = raw
+            else:
+                seq_by_idx[orig] = f"{no_text}.{position}" if no_text else str(position)
+
+                if uniform:
+                    name_by_idx[orig] = f"{base} {position}".strip() if base else raw
+                elif _BARE_SUBTOKEN_RE.match(raw):
+                    name_by_idx[orig] = f"{base} {raw}".strip() if base else raw
+                else:
+                    name_by_idx[orig] = raw
+
+            base_by_idx[orig] = base or raw
+
+    result = result.copy()
+    result["component_seq"] = result.index.map(seq_by_idx)
+    result["component_name"] = result.index.map(name_by_idx)
+    result["component_base"] = result.index.map(base_by_idx)
+
+    return result
 
 
 def normalize_label(value) -> str:
@@ -346,6 +491,11 @@ def parse_components(df, block_start, block_width=BLOCK_WIDTH):
     for col in COMPONENT_DETAIL_COLUMNS:
         result[col] = result[col].map(blank_placeholder)
 
+    # Nomor sub-komponen + nama lengkap dihitung atas grup penuh (termasuk baris
+    # kosong) supaya posisi sub-komponennya tepat, baru sesudah itu baris tanpa
+    # isi dibuang.
+    result = complete_component_groups(result)
+
     result = result[
         result[COMPONENT_DETAIL_COLUMNS].notna().any(axis=1)
     ].reset_index(drop=True)
@@ -461,7 +611,14 @@ def parse_workbook(excel_path) -> dict:
                         "masuk_source": masuk_source,
                         "keluar_source": keluar_source,
                         "tahun_maintenance": tahun,
-                        "component_count": len(block_rows),
+                        # "Total komponen" = jumlah nomor komponen yang benar-benar
+                        # terisi (≈32 per lokomotif sesuai form), bukan jumlah baris
+                        # (yang membengkak karena sub-komponen seperti 8 cylinder).
+                        "component_count": (
+                            int(block_rows["component_no"].nunique())
+                            if not block_rows.empty
+                            else 0
+                        ),
                     }
                 )
 

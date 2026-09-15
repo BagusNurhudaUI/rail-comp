@@ -282,7 +282,9 @@ CREATE TABLE IF NOT EXISTS equipment_components (
     keluar TEXT,
     tahun_maintenance INTEGER,
     component_no TEXT,
+    component_seq TEXT,
     component_name TEXT,
+    component_base TEXT,
     asal_kode_cetak TEXT,
     asal_no_manuf TEXT,
     pengganti_kode_cetak TEXT,
@@ -335,6 +337,35 @@ INDEXES = [
 ]
 
 
+# Kolom yang ditambahkan setelah tabel awal dibuat; dijalankan sebagai migrasi
+# ringan agar basis data lama ikut memilikinya tanpa perlu dibuat ulang.
+_ADDED_COLUMNS = [
+    ("equipment_components", "component_seq", "TEXT"),
+    ("equipment_components", "component_base", "TEXT"),
+]
+
+
+def _column_exists(conn, table: str, column: str) -> bool:
+    if IS_POSTGRES:
+        row = conn.execute(
+            """
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = ? AND column_name = ?
+            """,
+            (table, column),
+        ).fetchone()
+        return row is not None
+
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(dict(r)["name"] == column for r in rows)
+
+
+def _ensure_columns(conn) -> None:
+    for table, column, coltype in _ADDED_COLUMNS:
+        if not _column_exists(conn, table, column):
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+
+
 def init_db() -> None:
     if not IS_POSTGRES:
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -349,6 +380,8 @@ def init_db() -> None:
             CREATE_ACTIVITY_SQL,
         ):
             conn.execute(ddl)
+
+        _ensure_columns(conn)
 
         for statement in INDEXES:
             conn.execute(statement)

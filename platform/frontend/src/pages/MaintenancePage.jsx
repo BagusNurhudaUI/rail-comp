@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Alert, Card, Drawer, Input, Select, Table, Tag } from "antd";
-import { SearchOutlined } from "@ant-design/icons";
+import { Alert, Button, Card, Drawer, Input, Select, Table, Tag } from "antd";
+import { DeploymentUnitOutlined, SearchOutlined } from "@ant-design/icons";
 
 import { api } from "../lib/api";
 import ComponentHistoryDialog from "../components/ComponentHistoryDialog";
 import { useFetch, usePagedQuery } from "../hooks/useQuery";
-import { date, dateTime, duration, num, text } from "../lib/format";
+import { date, dateTime, duration, loco, num, text } from "../lib/format";
 import {
   Cell,
   CodeLink,
@@ -74,7 +74,7 @@ export default function MaintenancePage({ variant = "lokomotif" }) {
             fontWeight: 600,
           }}
         >
-          {text(value)}
+          {loco(value)}
           <div className="cell-sub">lihat riwayat</div>
         </button>
       ),
@@ -312,13 +312,20 @@ export default function MaintenancePage({ variant = "lokomotif" }) {
         </Card>
       )}
 
-      <MaintenanceDrawer id={detailId} onClose={() => setDetailId(null)} />
+      <MaintenanceDrawer
+        id={detailId}
+        onClose={() => setDetailId(null)}
+        onOpenLoco={(key) => {
+          setDetailId(null);
+          setLocoKey(key);
+        }}
+      />
       <LocomotiveDrawer locoKey={locoKey} onClose={() => setLocoKey(null)} />
     </>
   );
 }
 
-function MaintenanceDrawer({ id, onClose }) {
+function MaintenanceDrawer({ id, onClose, onOpenLoco }) {
   const width = useDrawerWidth(720);
   const { data, loading } = useFetch(() => api.maintenanceDetail(id), [id], { skip: !id });
 
@@ -337,8 +344,19 @@ function MaintenanceDrawer({ id, onClose }) {
       open={Boolean(id)}
       onClose={onClose}
       width={width}
-      title={event.lokomotif_no || "Detail perawatan"}
+      title={event.lokomotif_no ? loco(event.lokomotif_no) : "Detail perawatan"}
       loading={loading}
+      extra={
+        onOpenLoco && event.lokomotif_key ? (
+          <Button
+            size="small"
+            icon={<DeploymentUnitOutlined />}
+            onClick={() => onOpenLoco(event.lokomotif_key)}
+          >
+            Detail lokomotif
+          </Button>
+        ) : null
+      }
     >
       <KeyValue
         items={[
@@ -366,7 +384,10 @@ function MaintenanceDrawer({ id, onClose }) {
         ]}
       />
 
-      <SectionLabel>Daftar komponen ({data?.components?.length || 0})</SectionLabel>
+      <SectionLabel>
+        Daftar komponen ({num(data?.total_komponen ?? 0)}
+        {data?.components?.length ? ` · ${num(data.components.length)} baris` : ""})
+      </SectionLabel>
 
       <p className="cell-sub" style={{ margin: "-4px 0 8px" }}>
         Klik kode <b>Asal</b> atau <b>Pengganti</b> untuk melihat riwayat servisnya.
@@ -378,7 +399,12 @@ function MaintenanceDrawer({ id, onClose }) {
         dataSource={data?.components || []}
         pagination={{ pageSize: 20, size: "small", hideOnSinglePage: true }}
         columns={[
-          { title: "No", dataIndex: "component_no", width: 56, render: text },
+          {
+            title: "No",
+            dataIndex: "component_seq",
+            width: 64,
+            render: (value, row) => <span className="mono">{text(value ?? row.component_no)}</span>,
+          },
           { title: "Nama", dataIndex: "component_name", render: (value) => <b>{text(value)}</b> },
           {
             title: "Asal",
@@ -419,7 +445,7 @@ function LocomotiveDrawer({ locoKey, onClose }) {
       open={Boolean(locoKey)}
       onClose={onClose}
       width={width}
-      title={header.lokomotif_no || "Riwayat lokomotif"}
+      title={header.lokomotif_no ? loco(header.lokomotif_no) : "Riwayat lokomotif"}
       loading={loading}
     >
       <KeyValue
@@ -431,7 +457,7 @@ function LocomotiveDrawer({ locoKey, onClose }) {
         ]}
       />
 
-      <SectionLabel>Komponen paling sering diganti</SectionLabel>
+      <SectionLabel>Jumlah komponen per perawatan</SectionLabel>
 
       <Table
         rowKey="label"

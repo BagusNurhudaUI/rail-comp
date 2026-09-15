@@ -8,13 +8,14 @@ from fastapi.responses import StreamingResponse
 
 from .. import db
 from ..deps import get_current_user
+from ..excel_parser import augment_component_rows
 
 router = APIRouter(prefix="/api", tags=["components"])
 
 COMPONENT_SELECT = """
 SELECT id, maintenance_event_id, source_file, source_year, source_sheet, block_index,
        lokomotif_no, lokomotif_key, masuk, keluar, tahun_maintenance,
-       component_no, component_name,
+       component_no, component_seq, component_name, component_base,
        asal_kode_cetak, asal_no_manuf,
        pengganti_kode_cetak, pengganti_no_manuf, keterangan
 FROM equipment_components
@@ -48,7 +49,7 @@ def _component_filters(
         params += [like] * 7
 
     if name:
-        where.append("component_name = ?")
+        where.append("COALESCE(component_base, component_name) = ?")
         params.append(name)
 
     if year:
@@ -110,6 +111,9 @@ def list_components(
         params + [page_size, (page - 1) * page_size],
     )
 
+    # Lengkapi nomor sub-komponen + nama walau data belum di-ingest ulang.
+    augment_component_rows(items)
+
     for row in items:
         punya_asal = bool(row["asal_kode_cetak"] or row["asal_no_manuf"])
         punya_pengganti = bool(
@@ -151,6 +155,8 @@ def export_components(
         params,
     )
 
+    augment_component_rows(rows)
+
     buffer = io.StringIO()
 
     if rows:
@@ -173,14 +179,24 @@ def _trace_component(code: str) -> dict:
     """Lacak satu kode melintasi tahun & lokomotif, lengkap dengan perannya."""
     like = f"%{code.upper()}%"
 
+    # jenis_perawatan (P24/P48/P72) tersimpan di maintenance_events, bukan di
+    # equipment_components, jadi diambil lewat JOIN untuk tabel riwayat.
     rows = db.query(
-        f"""
-        {COMPONENT_SELECT}
-        WHERE upper(asal_kode_cetak) LIKE ?
-           OR upper(pengganti_kode_cetak) LIKE ?
-           OR upper(asal_no_manuf) LIKE ?
-           OR upper(pengganti_no_manuf) LIKE ?
-        ORDER BY tahun_maintenance, masuk, id
+        """
+        SELECT ec.id, ec.maintenance_event_id, ec.source_file, ec.source_year,
+               ec.source_sheet, ec.block_index, ec.lokomotif_no, ec.lokomotif_key,
+               ec.masuk, ec.keluar, ec.tahun_maintenance,
+               ec.component_no, ec.component_seq, ec.component_name, ec.component_base,
+               ec.asal_kode_cetak, ec.asal_no_manuf,
+               ec.pengganti_kode_cetak, ec.pengganti_no_manuf, ec.keterangan,
+               me.jenis_perawatan
+        FROM equipment_components ec
+        LEFT JOIN maintenance_events me ON me.id = ec.maintenance_event_id
+        WHERE upper(ec.asal_kode_cetak) LIKE ?
+           OR upper(ec.pengganti_kode_cetak) LIKE ?
+           OR upper(ec.asal_no_manuf) LIKE ?
+           OR upper(ec.pengganti_no_manuf) LIKE ?
+        ORDER BY ec.tahun_maintenance, ec.masuk, ec.id
         LIMIT 400
         """,
         [like] * 4,
@@ -316,9 +332,16 @@ def _history_workbook(code: str, layout: str):
     else:  # table
         headers = [
             "Tahun", "Lokomotif", "Komponen", "Peran",
-            "Asal", "Pengganti", "Masuk", "Keluar",
+            "Asal (No KAI)", "Asal (Serial Number)",
+            "Pengganti (No KAI)", "Pengganti (Serial Number)",
+            "Jenis Perawatan", "Masuk", "Keluar", "Sumber",
         ]
-        widths = [8, 15, 22, 12, 18, 18, 13, 13]
+        widths = [8, 16, 24, 12, 16, 18, 16, 18, 14, 13, 13, 28]
+        # Kolom kode yang perlu disorot saat cocok dengan komponen yang dilacak.
+        code_headers = {
+            "Asal (No KAI)", "Asal (Serial Number)",
+            "Pengganti (No KAI)", "Pengganti (Serial Number)",
+        }
         body_rows = [
             [
                 it["tahun_maintenance"],
@@ -326,9 +349,21 @@ def _history_workbook(code: str, layout: str):
                 it["component_name"],
                 it["peran"],
                 it["asal_kode_cetak"],
+                it["asal_no_manuf"],
                 it["pengganti_kode_cetak"],
+                it["pengganti_no_manuf"],
+                it.get("jenis_perawatan"),
                 _parse_date(it["masuk"]),
                 _parse_date(it["keluar"]),
+                " · ".join(
+                    part
+                    for part in (
+                        it.get("source_file"),
+                        it.get("source_sheet"),
+                        f"blok {it['block_index']}" if it.get("block_index") else None,
+                    )
+                    if part
+                ),
             ]
             for it in items
         ]
@@ -354,7 +389,8 @@ def _history_workbook(code: str, layout: str):
 
             # Sorot sel kode yang cocok dengan komponen yang dilacak.
             header_name = headers[c - 1]
-            if header_name in ("Asal", "Pengganti") and str(value or "").strip().upper() == target:
+            is_code_col = header_name in code_headers if layout != "wide" else False
+            if is_code_col and str(value or "").strip().upper() == target:
                 cell.fill = hit_fill
                 cell.font = hit_font
 
@@ -444,7 +480,10 @@ def list_maintenance(
                no_seri_lokomotif, lokomotif_no, lokomotif_key,
                dipo_induk, jenis_perawatan, program_bulan,
                masuk, keluar, masuk_source, keluar_source,
-               tahun_maintenance, component_count
+               tahun_maintenance,
+               (SELECT COUNT(DISTINCT ec.component_no)
+                  FROM equipment_components ec
+                 WHERE ec.maintenance_event_id = maintenance_events.id) AS component_count
         FROM maintenance_events
         WHERE {clause}
         ORDER BY tahun_maintenance DESC, masuk DESC, id DESC
@@ -487,4 +526,12 @@ def maintenance_detail(event_id: int, user: dict = Depends(get_current_user)):
         (event_id,),
     )
 
-    return {"event": event, "components": components}
+    # Nomor sub-komponen + nama lengkap diturunkan di sini juga, supaya data yang
+    # belum di-ingest ulang tetap tampil benar (2.1 Cylinder Assy 1R, dst.).
+    augment_component_rows(components)
+
+    # "Total komponen" = jumlah nomor komponen unik (≈32 sesuai form), bukan
+    # jumlah baris yang membengkak karena sub-komponen.
+    total_komponen = len({c["component_no"] for c in components if c["component_no"]})
+
+    return {"event": event, "components": components, "total_komponen": total_komponen}

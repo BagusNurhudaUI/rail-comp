@@ -2,10 +2,10 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge, Button, Col, Empty, Row, Segmented, Skeleton, Alert } from "antd";
 import {
-  AlertOutlined,
   BlockOutlined,
   CheckCircleOutlined,
   DeploymentUnitOutlined,
+  PlusCircleOutlined,
   SyncOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
@@ -96,11 +96,12 @@ export default function Dashboard() {
       <Row gutter={[14, 14]}>
         {[
           { icon: <DeploymentUnitOutlined />, label: "Total Lokomotif", value: s.total_lokomotif, hint: `${years.length} tahun data` },
-          { icon: <CheckCircleOutlined />, label: "Perawatan Selesai", value: s.selesai, hint: `${s.persen_selesai ?? 0}% dari total` },
-          { icon: <BlockOutlined />, label: "Total Komponen", value: s.total_komponen, hint: "seluruh baris" },
-          { icon: <ThunderboltOutlined />, label: "Komponen Diganti", value: s.komponen_diganti, hint: `${s.persen_diganti ?? 0}% tercatat diganti` },
+          { icon: <BlockOutlined />, label: "Total Komponen", value: s.total_komponen, hint: "dismantle · refurbish · penambahan" },
+          { icon: <CheckCircleOutlined />, label: "Terinstall", value: s.komponen_terinstall, hint: "ada part pengganti (swap + penambahan)" },
+          { icon: <ThunderboltOutlined />, label: "Dismantle", value: s.komponen_dismantle, hint: "lama dilepas & diganti" },
+          { icon: <SyncOutlined />, label: "Refurbish", value: s.komponen_refurbish, hint: "diperiksa, tetap dipakai" },
+          { icon: <PlusCircleOutlined />, label: "Penambahan", value: s.komponen_penambahan, hint: "part baru tanpa gantian" },
           { icon: <SyncOutlined />, label: "Sedang Dirawat", value: s.berjalan, hint: "belum tercatat keluar" },
-          { icon: <AlertOutlined />, label: "Perlu Verifikasi", value: s.tanggal_estimasi, hint: "tanggal dari program bulan" },
         ].map((item) => (
           <Col key={item.label} xs={12} md={8} xl={4}>
             <Stat {...item} loading={summary.loading} />

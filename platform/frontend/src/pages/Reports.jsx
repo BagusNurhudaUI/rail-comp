@@ -2,7 +2,7 @@ import { Card, Col, Row, Table, Tag } from "antd";
 
 import { api } from "../lib/api";
 import { useFetch } from "../hooks/useQuery";
-import { num, text } from "../lib/format";
+import { loco, num, text } from "../lib/format";
 import { DATA_COLORS } from "../theme";
 import { GroupedBar } from "../components/charts";
 import { PageHead, StatusTag, Widget } from "../components/ui";
@@ -141,7 +141,7 @@ export default function Reports() {
               locale={{ emptyText: "Tidak ada" }}
               dataSource={anomalies.data?.dipo_tidak_dikenal || []}
               columns={[
-                { title: "Lokomotif", dataIndex: "lokomotif_no", render: text },
+                { title: "Lokomotif", dataIndex: "lokomotif_no", render: loco },
                 {
                   title: "Dipo",
                   dataIndex: "dipo_induk",
